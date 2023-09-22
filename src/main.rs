@@ -39,8 +39,6 @@ async fn handle_stream(stream: TcpStream) {
             break;
         };
 
-        println!("Sending value {:?}", response);
-
         handler.write_value(response).await.unwrap();
     }
 }
