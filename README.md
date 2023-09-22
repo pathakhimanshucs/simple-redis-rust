@@ -1,6 +1,6 @@
 [![progress-banner](https://backend.codecrafters.io/progress/redis/f67f28a8-e60c-485d-8705-e1766aeadb77)](https://app.codecrafters.io/users/pathakhimanshucs?r=2qF)
 
-This is a starting point for Rust solutions to the
+This is an implementation for Rust solutions to the
 ["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
 
 This is a toy Redis clone that's capable of handling
