@@ -33,6 +33,7 @@ async fn handle_stream(stream: TcpStream, storage: impl store::RedisKV) {
 
         let response = if let Some(v) = value {
             let (command, args) = extract_command(v).unwrap();
+            // TODO: Refactor command handling
             match command.as_str() {
                 "ping" => Value::SimpleString("PONG".to_string()),
                 "echo" => args.first().unwrap().clone(),
