@@ -1,6 +1,6 @@
 use anyhow::Result;
 use handler::Value;
-use store::HashStore;
+use store::{get_epoch_ms, HashStore, RedisValue};
 use tokio::net::{TcpListener, TcpStream};
 
 mod handler;
@@ -36,24 +36,29 @@ async fn handle_stream(stream: TcpStream, storage: impl store::RedisKV) {
             match command.as_str() {
                 "ping" => Value::SimpleString("PONG".to_string()),
                 "echo" => args.first().unwrap().clone(),
-                "set" => {
-                    let mut args_iter = args.into_iter();
-                    let key = args_iter.next().unwrap();
-                    let value = args_iter.next().unwrap();
+                "set" => match args.as_slice() {
+                    [Value::BulkString(key_str), Value::BulkString(value_str), Value::BulkString(opt), Value::BulkString(expiry)]
+                        if opt == "px" =>
+                    {
+                        let expiry_ms = expiry.parse::<u64>().unwrap();
 
-                    println!("Set request for key: {:?} and value {:?}", key, value);
-                    match (key, value) {
-                        (Value::BulkString(key_str), Value::BulkString(value_str)) => {
-                            storage.set(key_str, value_str);
-                            Value::SimpleString("OK".to_string())
-                        }
-                        _ => Value::Nil,
+                        let val = RedisValue::ValueWithExpiry {
+                            value: value_str.to_owned(),
+                            expiry_unix_ms: get_epoch_ms() + expiry_ms as u128,
+                        };
+                        storage.set(key_str.to_owned(), val);
+                        Value::SimpleString("OK".to_string())
                     }
-                }
+                    [Value::BulkString(key_str), Value::BulkString(value_str), ..] => {
+                        let val = RedisValue::SimpleValue(value_str.to_owned());
+                        storage.set(key_str.to_owned(), val);
+                        Value::SimpleString("OK".to_string())
+                    }
+                    _ => Value::Nil,
+                },
                 "get" => {
                     let key = args.into_iter().next().unwrap();
                     if let Value::BulkString(key_str) = key {
-                        println!("Get request for key: {:?}", key_str);
                         if let Some(val) = storage.get(key_str) {
                             Value::SimpleString(val)
                         } else {
