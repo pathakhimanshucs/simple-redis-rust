@@ -27,7 +27,7 @@ impl ResponseHandler {
         Ok(Some(msg))
     }
     pub async fn write_value(&mut self, value: Value) -> Result<()> {
-        self.stream.write(value.serialize().as_bytes()).await?;
+        _ = self.stream.write(value.serialize().as_bytes()).await?;
         Ok(())
     }
 }
@@ -37,6 +37,7 @@ pub enum Value {
     SimpleString(String),
     BulkString(String),
     Array(Vec<Value>),
+    Nil,
 }
 
 impl Value {
@@ -44,6 +45,7 @@ impl Value {
         match self {
             Value::SimpleString(s) => format!("+{}\r\n", s),
             Value::BulkString(s) => format!("${}\r\n{}\r\n", s.len(), s),
+            Value::Nil => "$-1\r\n".to_string(),
             _ => panic!("Unsupported value for serialize"),
         }
     }
