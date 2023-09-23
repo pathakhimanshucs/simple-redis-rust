@@ -19,7 +19,7 @@ async fn main() {
                 tokio::spawn(async move { handle_stream(stream, store_clone).await });
             }
             Err(e) => {
-                println!("error: {}", e);
+                println!("error: {e}");
             }
         }
     }
@@ -58,9 +58,8 @@ async fn handle_stream(stream: TcpStream, storage: impl store::RedisKV) {
                     _ => Value::Nil,
                 },
                 "get" => {
-                    let key = args.into_iter().next().unwrap();
-                    if let Value::BulkString(key_str) = key {
-                        if let Some(val) = storage.get(key_str) {
+                    if let Some(Value::BulkString(key_str)) = args.first() {
+                        if let Some(val) = storage.get(key_str.clone()) {
                             Value::SimpleString(val)
                         } else {
                             Value::Nil
@@ -79,19 +78,24 @@ async fn handle_stream(stream: TcpStream, storage: impl store::RedisKV) {
     }
 }
 
-fn extract_command(value: handler::Value) -> Result<(String, Vec<handler::Value>)> {
+fn extract_command(value: handler::Value) -> Result<(String, Vec<Value>)> {
     match value {
-        handler::Value::Array(a) => Ok((
-            unpack_bulk_str(a.first().unwrap().clone())?,
-            a.into_iter().skip(1).collect(),
-        )),
+        handler::Value::Array(a) => {
+            let mut iter = a.into_iter();
+            Ok((
+                iter.next()
+                    .and_then(unpack_bulk_str)
+                    .ok_or(anyhow::anyhow!("Expected command to be a bulk string"))?,
+                iter.collect(),
+            ))
+        }
         _ => Err(anyhow::anyhow!("Unexpected command format")),
     }
 }
 
-fn unpack_bulk_str(value: handler::Value) -> Result<String> {
+fn unpack_bulk_str(value: handler::Value) -> Option<String> {
     match value {
-        Value::BulkString(s) => Ok(s),
-        _ => Err(anyhow::anyhow!("Expected command to be a bulk string")),
+        Value::BulkString(s) => Some(s),
+        _ => None,
     }
 }

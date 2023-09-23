@@ -26,8 +26,9 @@ impl ResponseHandler {
         let (msg, _) = parse_message(self.buffer.split())?;
         Ok(Some(msg))
     }
+
     pub async fn write_value(&mut self, value: Value) -> Result<()> {
-        _ = self.stream.write(value.serialize().as_bytes()).await?;
+        _ = self.stream.write(value.serialize()?.as_bytes()).await?;
         Ok(())
     }
 }
@@ -41,12 +42,12 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn serialize(self) -> String {
+    pub fn serialize(self) -> Result<String> {
         match self {
-            Value::SimpleString(s) => format!("+{}\r\n", s),
-            Value::BulkString(s) => format!("${}\r\n{}\r\n", s.len(), s),
-            Value::Nil => "$-1\r\n".to_string(),
-            _ => panic!("Unsupported value for serialize"),
+            Value::SimpleString(s) => Ok(format!("+{}\r\n", s)),
+            Value::BulkString(s) => Ok(format!("${}\r\n{}\r\n", s.len(), s)),
+            Value::Nil => Ok("$-1\r\n".to_string()),
+            _ => Err(anyhow::anyhow!("Unsupported value for serialize")),
         }
     }
 }
@@ -56,38 +57,29 @@ fn parse_message(buffer: BytesMut) -> Result<(Value, usize)> {
         '+' => parse_simple_string(buffer),
         '*' => parse_array(buffer),
         '$' => parse_bulk_string(buffer),
-        _ => Err(anyhow::anyhow!("Not a known value type {:?}", buffer)),
+        _ => Err(anyhow::anyhow!("Not a known value type {buffer:?}")),
     }
 }
 
-fn read_until_crlf(buffer: &[u8]) -> Option<(&[u8], usize)> {
-    for i in 1..buffer.len() {
-        if buffer[i - 1] == b'\r' && buffer[i] == b'\n' {
-            return Some((&buffer[0..(i - 1)], i + 1));
-        }
-    }
-    return None;
+fn read_until_crlf(buffer: &[u8]) -> Option<&[u8]> {
+    buffer
+        .windows(2)
+        .position(|w| w[0] == b'\r' && w[1] == b'\n')
+        .map(|i| &buffer[0..i])
 }
 
 fn parse_simple_string(buffer: BytesMut) -> Result<(Value, usize)> {
-    if let Some((line, length)) = read_until_crlf(&buffer[1..]) {
-        let string = String::from_utf8(line.to_vec()).unwrap();
-        return Ok((Value::SimpleString(string), length + 1));
-    }
-
-    Err(anyhow::anyhow!("Invalid string {:?}", buffer))
+    let line = read_until_crlf(&buffer[1..]).ok_or(anyhow::anyhow!("Invalid string {buffer:?}"))?;
+    let string = String::from_utf8(line.to_vec())?;
+    Ok((Value::SimpleString(string), line.len() + 1))
 }
 
 fn parse_array(buffer: BytesMut) -> Result<(Value, usize)> {
-    let (array_length, mut bytes_consumed) =
-        if let Some((line, len)) = read_until_crlf(&buffer[1..]) {
-            let array_length = parse_int(line)?;
+    let line =
+        read_until_crlf(&buffer[1..]).ok_or(anyhow::anyhow!("Invalid array format {buffer:?}"))?;
+    let array_length = parse_int(line)?;
 
-            (array_length, len + 1)
-        } else {
-            return Err(anyhow::anyhow!("Invalid array format {:?}", buffer));
-        };
-
+    let mut bytes_consumed = line.len() + 1;
     let mut items = vec![];
     for _ in 0..array_length {
         let (array_item, length) = parse_message(BytesMut::from(&buffer[bytes_consumed..]))?;
@@ -99,16 +91,11 @@ fn parse_array(buffer: BytesMut) -> Result<(Value, usize)> {
 }
 
 fn parse_bulk_string(buffer: BytesMut) -> Result<(Value, usize)> {
-    // Find the length of the bulk string
-    let (bulk_string_length, bytes_consumed) =
-        if let Some((line, len)) = read_until_crlf(&buffer[1..]) {
-            let bulk_string_length = parse_int(line)?;
+    let line =
+        read_until_crlf(&buffer[1..]).ok_or(anyhow::anyhow!("Invalid array format {buffer:?}"))?;
+    let bulk_string_length = parse_int(line)?;
 
-            (bulk_string_length, len + 1)
-        } else {
-            return Err(anyhow::anyhow!("Invalid array format {:?}", buffer));
-        };
-
+    let bytes_consumed = line.len() + 1;
     let end_of_bulk = bytes_consumed + bulk_string_length as usize;
     let total_parsed = end_of_bulk + 2;
 
