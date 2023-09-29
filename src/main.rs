@@ -9,7 +9,7 @@ mod store;
 #[tokio::main]
 async fn main() {
     let storage = HashStore::new();
-    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+    let listener = TcpListener::bind("0.0.0.0:6379").await.unwrap();
 
     loop {
         let stream = listener.accept().await;
